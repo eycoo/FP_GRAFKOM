@@ -16,6 +16,21 @@ try:
 except ImportError:  # omegaconf belum terpasang (mis. lint lokal)
     OmegaConf = None
 
+try:
+    import yaml  # fallback bila omegaconf tak ada (PyYAML lebih umum tersedia)
+except ImportError:
+    yaml = None
+
+
+def _read_yaml(path: str | Path) -> dict:
+    if OmegaConf is not None:
+        from omegaconf import OmegaConf as _OC
+        return dict(_OC.to_container(_OC.load(path), resolve=True) or {})
+    if yaml is not None:
+        with open(path, encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    return {}
+
 
 @dataclass
 class PreprocessCfg:
@@ -56,14 +71,15 @@ class PipelineCfg:
     @classmethod
     def load(cls, yaml_path: str | Path | None = None, **overrides: Any) -> "PipelineCfg":
         cfg = cls()
-        if yaml_path is not None and OmegaConf is not None and Path(yaml_path).exists():
-            data = OmegaConf.load(yaml_path)
-            cfg = cls(
-                model=ModelCfg(**(data.get("model") or {})),
-                preprocess=PreprocessCfg(**(data.get("preprocess") or {})),
-                reconstruct=ReconstructCfg(**(data.get("reconstruct") or {})),
-                export=ExportCfg(**(data.get("export") or {})),
-            )
+        if yaml_path is not None and Path(yaml_path).exists():
+            data = _read_yaml(yaml_path)
+            if data:
+                cfg = cls(
+                    model=ModelCfg(**(data.get("model") or {})),
+                    preprocess=PreprocessCfg(**(data.get("preprocess") or {})),
+                    reconstruct=ReconstructCfg(**(data.get("reconstruct") or {})),
+                    export=ExportCfg(**(data.get("export") or {})),
+                )
         # override datar bertitik, mis. reconstruct.texture_resolution=512
         for key, val in overrides.items():
             section, _, leaf = key.partition(".")

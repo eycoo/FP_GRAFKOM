@@ -17,6 +17,7 @@ Output:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -31,6 +32,12 @@ from export_glb import export_glb, dump_raw_maps, write_manifest  # noqa: E402
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
+def safe_stem(name: str) -> str:
+    """Bersihkan nama file jadi stem aman (Kaggle: ada spasi, kutip, koma)."""
+    stem = re.sub(r"[^A-Za-z0-9.-]+", "_", name).strip("_")
+    return stem or "artifact"
+
+
 def collect_images(input_path: Path) -> list[Path]:
     if input_path.is_file():
         return [input_path]
@@ -42,7 +49,7 @@ def process_one(img_path: Path, reconstructor, cfg: PipelineCfg, rembg_session, 
     out_root = Path(cfg.export.out_dir)
     glb_dir = out_root / "glb"
     raw_dir = out_root / "raw_mesh"
-    stem = img_path.stem
+    stem = safe_stem(img_path.stem)
 
     # Tahap A
     image = prepare_image(
