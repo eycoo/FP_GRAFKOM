@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<!--
+  Jobdesk 3 - Viewer web (tahap F). STARTER buatan ketua untuk titik mulai.
+  Sudah jalan: unggah GLB, orbit/zoom/pan, IBL relight, mode PBR/normal/wireframe, statistik.
+  TODO Jobdesk 3: DRACOLoader + KTX2Loader (GLB terkompres), pilihan environment HDR,
+  multi-tier switch, polish UI. Lihat viewer/README.md.
+-->
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Viewer Artefak 3D</title>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: system-ui, sans-serif; background: #1a1a1a; }
+    #ui { position: fixed; top: 10px; left: 10px; z-index: 10; color: #eee;
+          background: rgba(0,0,0,.6); padding: 12px; border-radius: 8px; font-size: 13px; }
+    #ui label { display: block; margin: 4px 0; }
+    #stats { position: fixed; top: 10px; right: 10px; z-index: 10; color: #0f0;
+             background: rgba(0,0,0,.6); padding: 10px; border-radius: 8px;
+             font-family: monospace; font-size: 12px; white-space: pre; }
+    #err { position: fixed; bottom: 10px; left: 10px; color: #f66; font-size: 12px; }
+    button { cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <strong>Viewer Artefak 3D</strong>
+    <label>GLB: <input type="file" id="file" accept=".glb,.gltf" /></label>
+    <label>Mode:
+      <select id="mode">
+        <option value="pbr">PBR</option>
+        <option value="normal">Normal</option>
+        <option value="wireframe">Wireframe</option>
+      </select>
+    </label>
+    <label>Env intensity: <input type="range" id="env" min="0" max="3" step="0.1" value="1" /></label>
+  </div>
+  <div id="stats">FPS: -\nTris: -\nCalls: -</div>
+  <div id="err"></div>
+
+  <script type="importmap">
+  { "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }}
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+    const errEl = document.getElementById('err');
+    window.addEventListener('error', e => errEl.textContent = 'Error: ' + e.message);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a1a);
+    const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.01, 100);
+    camera.position.set(0, 0, 2.5);
+
+    // Image Based Lighting (relighting via environment)
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    const envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environment = envMap;
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    const loader = new GLTFLoader();
+    let current = null;
+
+    function frameObject(obj) {
+      const box = new THREE.Box3().setFromObject(obj);
+      const size = box.getSize(new THREE.Vector3()).length();
+      const center = box.getCenter(new THREE.Vector3());
+      obj.position.sub(center);
+      camera.position.set(0, 0, size * 1.2);
+      controls.target.set(0, 0, 0);
+      controls.update();
+    }
+
+    function loadGLB(url) {
+      loader.load(url, gltf => {
+        if (current) scene.remove(current);
+        current = gltf.scene;
+        scene.add(current);
+        frameObject(current);
+        applyMode(document.getElementById('mode').value);
+      }, undefined, e => errEl.textContent = 'Gagal muat GLB: ' + e.message);
+    }
+
+    // Mode inspeksi grafika (PRD FR-5)
+    const normalMat = new THREE.MeshNormalMaterial();
+    function applyMode(mode) {
+      if (!current) return;
+      current.traverse(o => {
+        if (!o.isMesh) return;
+        if (!o.userData.orig) o.userData.orig = o.material;
+        if (mode === 'pbr') { o.material = o.userData.orig; o.material.wireframe = false; }
+        else if (mode === 'normal') { o.material = normalMat; }
+        else if (mode === 'wireframe') { o.material = o.userData.orig; o.material.wireframe = true; }
+      });
+    }
+
+    document.getElementById('file').addEventListener('change', e => {
+      const f = e.target.files[0];
+      if (f) loadGLB(URL.createObjectURL(f));
+    });
+    document.getElementById('mode').addEventListener('change', e => applyMode(e.target.value));
+    document.getElementById('env').addEventListener('input', e => {
+      scene.environmentIntensity = parseFloat(e.target.value);
+    });
+
+    // Statistik real time (FPS, tris, draw calls)
+    const statsEl = document.getElementById('stats');
+    let last = performance.now(), frames = 0, fps = 0;
+    function tick() {
+      requestAnimationFrame(tick);
+      controls.update();
+      renderer.render(scene, camera);
+      frames++;
+      const now = performance.now();
+      if (now - last >= 1000) { fps = frames; frames = 0; last = now; }
+      const info = renderer.info.render;
+      statsEl.textContent = `FPS: ${fps}\nTris: ${info.triangles}\nCalls: ${info.calls}`;
+    }
+    tick();
+
+    addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+  </script>
+</body>
+</html>

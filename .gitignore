@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Model weights / cache (besar, jangan commit)
+*.safetensors
+*.ckpt
+*.onnx
+.cache/
+hf_cache/
+
+# Output besar — commit GLB final secara selektif, bukan mesh mentah raksasa
+outputs/raw_mesh/*
+!outputs/raw_mesh/.gitkeep
+outputs/**/*.ply
+outputs/**/*.obj
+
+# Dataset foto mentah berukuran besar (kelola lewat spreadsheet/lisensi, bukan git)
+dataset/photos/**
+!dataset/photos/.gitkeep
+dataset/ground_truth/**
+!dataset/ground_truth/.gitkeep
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/

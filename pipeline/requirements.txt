@@ -1,0 +1,22 @@
+# Jobdesk 1 - Pipeline inti (tahap A-E). Target runtime: Colab/Kaggle T4 16GB.
+# SF3D dipasang dari sumber (lihat README). Versi di-pin agar reprodusibel.
+
+torch==2.4.0
+torchvision==0.19.0
+numpy<2.0
+pillow>=10.0
+rembg>=2.0.50            # backend U2Net untuk prapengolahan bawaan SF3D (tahap A)
+onnxruntime>=1.17        # backend rembg
+trimesh>=4.0             # representasi & ekspor mesh
+pymeshlab>=2023.12       # post-process opsional (tahap D, dibantu jobdesk 3)
+huggingface_hub>=0.24    # akses model gated SF3D
+safetensors>=0.4
+omegaconf>=2.3
+einops>=0.7
+jaxtyping>=0.2
+gpytoolbox>=0.2          # remesh util dipakai SF3D
+transformers>=4.42
+
+# SF3D + texture baking (pasang manual, butuh CUDA toolkit di runtime):
+#   pip install git+https://github.com/Stability-AI/stable-fast-3d.git
+#   pip install ./texture_baker ./uv_unwrapper   (sub-paket dari repo SF3D)

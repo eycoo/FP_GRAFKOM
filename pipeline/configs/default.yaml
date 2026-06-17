@@ -1,0 +1,23 @@
+# Konfigurasi default pipeline inti (Jobdesk 1).
+# Override lewat argumen CLI atau parameter notebook untuk kebutuhan ablation.
+
+model:
+  name: stabilityai/stable-fast-3d   # model utama. Pembanding: stabilityai/TripoSR
+  config_name: config.yaml
+  weight_name: model.safetensors
+  device: cuda                        # auto-fallback ke cpu/mps bila cuda tak ada
+
+preprocess:                           # tahap A (bawaan SF3D)
+  foreground_ratio: 0.85              # ablation: pengaruh ke kelengkapan mesh (PRD 11)
+  remove_background: true             # U2Net via rembg. Matikan bila foto sudah RGBA bersih
+
+reconstruct:                          # tahap B & C
+  texture_resolution: 1024            # resolusi bake PBR (albedo/roughness/metallic)
+  remesh: none                        # none | triangle | quad
+  vertex_count: -1                    # -1 = tanpa target. >0 = remesh ke jumlah verteks
+  estimate_illumination: false        # SF3D delighting tetap aktif; ini env-light HDR opsional
+
+export:                               # tahap E (serah-terima ke jobdesk 3)
+  out_dir: ../outputs
+  write_raw_mesh: true                # simpan mesh+PBR mentah utk jobdesk 3 & 4
+  glb_basename: artifact              # output: <kategori>_<id>_<tier>.glb
