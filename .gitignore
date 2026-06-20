@@ -1,3 +1,7 @@
+# Arsip dataset (besar, upload ke Kaggle langsung — jangan commit, >100MB limit GitHub)
+*.zip
+dataset.zip
+
 # Python
 __pycache__/
 *.py[cod]
