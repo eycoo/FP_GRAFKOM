@@ -60,8 +60,11 @@ class ModelCfg:
     weight_name: str = "model.safetensors"
     device: str = "cuda"
     # SF3D mematikan autocast internal & selalu buat input fp32 -> bobot bf16 bikin
-    # "mat1 mat2 dtype" clash. Biarkan fp32. Hemat VRAM lewat cond_image_size, bukan dtype.
+    # "mat1 mat2 dtype" clash. Biarkan fp32. Hemat VRAM lewat chunking, bukan dtype.
     half: bool = False
+    # ekstraksi mesh SF3D materialkan fitur (N_tet, 3*Cp) ~5GB sekaligus -> OOM T4.
+    # >0: proses query triplane+decoder per-chunk titik. 0 = perilaku asli SF3D.
+    query_chunk: int = 65536
 
 
 @dataclass

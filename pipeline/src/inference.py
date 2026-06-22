@@ -53,12 +53,64 @@ class SF3DReconstructor:
             weight_name=self.cfg.weight_name,
         )
         model.to(self.device)
-        # bobot bfloat16 di CUDA -> ~separuh VRAM bobot+aktivasi, kunci muat di T4 (NFR-1).
-        # marching cubes/UV unwrap internal SF3D meng-cast float32 sendiri saat perlu.
+        # bobot bfloat16 di CUDA -> ~separuh VRAM. CATATAN: SF3D paksa fp32 internal
+        # (autocast enabled=False) & input selalu fp32, jadi bf16 umumnya clash dtype.
+        # Default half=False; kunci muat T4 lewat query_chunk di bawah.
         if getattr(self.cfg, "half", False) and self.device == "cuda":
             model.to(torch.bfloat16)
         model.eval()
+        chunk = int(getattr(self.cfg, "query_chunk", 0) or 0)
+        if chunk > 0 and self.device == "cuda":
+            self._patch_chunked_query(model, chunk)
         return model
+
+    @staticmethod
+    def _patch_chunked_query(model, chunk: int) -> None:
+        """Pecah query triplane+decoder per-chunk saat ekstraksi isosurface (anti-OOM T4).
+
+        SF3D.triplane_to_meshes membangun fitur (N_tet, 3*Cp) untuk SEMUA verteks tet
+        sekaligus (~5GB di res 160) -> lonjakan VRAM yang OOM di T4 16GB. Versi ini
+        memproses verteks per-chunk lalu menyambung sdf/deform (kecil: N x1, N x3).
+        Mesh identik: urutan verteks terjaga, hanya jejak memori puncak yang turun.
+        Tambal di tingkat instance (menimpa method kelas saat lookup `self.`).
+        """
+        import types
+
+        import torch
+        import sf3d.system as sf3d_system
+
+        scale_tensor = sf3d_system.scale_tensor  # diimpor ke namespace modul SF3D
+
+        def triplane_to_meshes(self, triplanes):
+            meshes = []
+            for i in range(triplanes.shape[0]):
+                triplane = triplanes[i]
+                grid_vertices = scale_tensor(
+                    self.isosurface_helper.grid_vertices.to(triplanes.device),
+                    self.isosurface_helper.points_range,
+                    self.bbox,
+                )
+                n = grid_vertices.shape[0]
+                sdf_parts, deform_parts = [], []
+                for s in range(0, n, chunk):
+                    gv = grid_vertices[s : s + chunk]
+                    values = self.query_triplane(gv, triplane)
+                    decoded = self.decoder(values, include=["vertex_offset", "density"])
+                    sdf_parts.append(
+                        (decoded["density"] - self.cfg.isosurface_threshold).reshape(-1, 1)
+                    )
+                    deform_parts.append(decoded["vertex_offset"].reshape(-1, 3))
+                    del values, decoded
+                sdf = torch.cat(sdf_parts, dim=0)
+                deform = torch.cat(deform_parts, dim=0)
+                mesh = self.isosurface_helper(sdf.view(-1, 1), deform.view(-1, 3))
+                mesh.v_pos = scale_tensor(
+                    mesh.v_pos, self.isosurface_helper.points_range, self.bbox
+                )
+                meshes.append(mesh)
+            return meshes
+
+        model.triplane_to_meshes = types.MethodType(triplane_to_meshes, model)
 
     def run(self, image: Image.Image, recon_cfg) -> ReconResult:
         """Jalankan tahap B+C untuk satu citra. Idempotent, aman dipanggil berulang."""
