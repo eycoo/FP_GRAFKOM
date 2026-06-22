@@ -59,7 +59,9 @@ class ModelCfg:
     config_name: str = "config.yaml"
     weight_name: str = "model.safetensors"
     device: str = "cuda"
-    half: bool = True   # muat bobot bfloat16 di CUDA: ~separuh VRAM, muat di T4 16GB (NFR-1)
+    # SF3D mematikan autocast internal & selalu buat input fp32 -> bobot bf16 bikin
+    # "mat1 mat2 dtype" clash. Biarkan fp32. Hemat VRAM lewat cond_image_size, bukan dtype.
+    half: bool = False
 
 
 @dataclass
