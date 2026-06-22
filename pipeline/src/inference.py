@@ -44,6 +44,7 @@ class SF3DReconstructor:
         return "cpu"
 
     def _load_model(self):
+        import torch
         from sf3d.system import SF3D
 
         model = SF3D.from_pretrained(
@@ -52,6 +53,10 @@ class SF3DReconstructor:
             weight_name=self.cfg.weight_name,
         )
         model.to(self.device)
+        # bobot bfloat16 di CUDA -> ~separuh VRAM bobot+aktivasi, kunci muat di T4 (NFR-1).
+        # marching cubes/UV unwrap internal SF3D meng-cast float32 sendiri saat perlu.
+        if getattr(self.cfg, "half", False) and self.device == "cuda":
+            model.to(torch.bfloat16)
         model.eval()
         return model
 

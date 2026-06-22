@@ -59,6 +59,7 @@ class ModelCfg:
     config_name: str = "config.yaml"
     weight_name: str = "model.safetensors"
     device: str = "cuda"
+    half: bool = True   # muat bobot bfloat16 di CUDA: ~separuh VRAM, muat di T4 16GB (NFR-1)
 
 
 @dataclass
