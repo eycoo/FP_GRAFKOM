@@ -121,15 +121,23 @@ class SF3DReconstructor:
             torch.cuda.reset_peak_memory_stats()
             torch.cuda.synchronize()
 
-        # autocast bfloat16 di CUDA untuk hemat VRAM & cepat (NFR-1, NFR-4)
-        autocast = (
-            torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-            if self.device == "cuda"
-            else nullcontext()
-        )
+        # SF3D matikan autocast internal & paksa fp32 -> jangan paksa bf16 dari luar.
+        # Hemat VRAM lewat backend atensi: SF3D pakai scaled_dot_product_attention; di
+        # T4 (sm75)+fp32 dispatcher sering jatuh ke backend MATH yang materialkan matriks
+        # NxN (~GB). Paksa EFFICIENT (fallback MATH) supaya matriks NxN tak dibentuk.
+        try:
+            from torch.nn.attention import SDPBackend, sdpa_kernel
+
+            attn_ctx = (
+                sdpa_kernel([SDPBackend.EFFICIENT_ATTENTION, SDPBackend.MATH])
+                if self.device == "cuda"
+                else nullcontext()
+            )
+        except Exception:  # PyTorch lama tanpa torch.nn.attention
+            attn_ctx = nullcontext()
 
         t0 = time.perf_counter()
-        with torch.no_grad(), autocast:
+        with torch.no_grad(), attn_ctx:
             mesh, glob_dict = self.model.run_image(
                 image,
                 bake_resolution=recon_cfg.texture_resolution,
