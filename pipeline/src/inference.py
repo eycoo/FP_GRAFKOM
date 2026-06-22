@@ -72,10 +72,9 @@ class SF3DReconstructor:
         sekaligus (~5GB di res 160) -> lonjakan VRAM yang OOM di T4 16GB. Versi ini
         memproses verteks per-chunk lalu menyambung sdf/deform (kecil: N x1, N x3).
         Mesh identik: urutan verteks terjaga, hanya jejak memori puncak yang turun.
-        Tambal di tingkat instance (menimpa method kelas saat lookup `self.`).
+        Tambal di tingkat KELAS (bukan instance) supaya pasti kena walau run_image
+        memanggilnya via `self.` di jalur internal SF3D.
         """
-        import types
-
         import torch
         import sf3d.system as sf3d_system
 
@@ -110,7 +109,9 @@ class SF3DReconstructor:
                 meshes.append(mesh)
             return meshes
 
-        model.triplane_to_meshes = types.MethodType(triplane_to_meshes, model)
+        cls = type(model)
+        cls.triplane_to_meshes = triplane_to_meshes  # method tak-terikat (pakai self)
+        cls._chunked_query = chunk                   # penanda bukti tambalan aktif
 
     def run(self, image: Image.Image, recon_cfg) -> ReconResult:
         """Jalankan tahap B+C untuk satu citra. Idempotent, aman dipanggil berulang."""
