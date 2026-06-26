@@ -18,27 +18,46 @@ def load_rembg_session(model_name: str = "u2net"):
     return rembg.new_session(model_name)
 
 
+def _isolation_utils():
+    """Util remove_background/resize_foreground: utamakan SF3D, fallback ke TripoSR.
+
+    Kedua model mewarisi API util yang sama (rembg + crop foreground). Memilih util
+    bawaan model agar prapengolahan identik dgn jalur internalnya. Dipakai pembanding
+    TripoSR (notebook terpisah) tanpa perlu memasang SF3D.
+    """
+    try:
+        import sf3d.utils as u
+        return u
+    except ImportError:
+        pass
+    try:
+        import tsr.utils as u  # TripoSR
+        return u
+    except ImportError:
+        pass
+    return None
+
+
 def prepare_image(
     image_path: str | Path,
     rembg_session,
     foreground_ratio: float = 0.85,
     remove_background: bool = True,
 ) -> Image.Image:
-    """Foto mentah -> citra RGBA terisolasi, ter-crop, ter-resize untuk SF3D.
+    """Foto mentah -> citra RGBA terisolasi, ter-crop, ter-resize.
 
-    Pakai util resmi SF3D agar identik dengan jalur internal model. Bila SF3D
-    belum ter-import (mis. lint lokal tanpa GPU) -> RuntimeError dengan petunjuk.
+    Pakai util resmi model (SF3D atau TripoSR) agar identik dengan jalur internalnya.
+    Bila keduanya tak terpasang (mis. lint lokal tanpa GPU) -> RuntimeError.
     """
-    try:
-        import sf3d.utils as sf3d_utils
-    except ImportError as exc:  # noqa: TRY003
+    utils = _isolation_utils()
+    if utils is None:  # noqa: TRY003
         raise RuntimeError(
-            "sf3d belum terpasang. Jalankan di runtime GPU dan pasang SF3D dulu "
+            "sf3d/tsr belum terpasang. Jalankan di runtime GPU & pasang model dulu "
             "(lihat pipeline/README.md)."
-        ) from exc
+        )
 
     image = Image.open(image_path).convert("RGBA")
     if remove_background:
-        image = sf3d_utils.remove_background(image, rembg_session)
-    image = sf3d_utils.resize_foreground(image, foreground_ratio)
+        image = utils.remove_background(image, rembg_session)
+    image = utils.resize_foreground(image, foreground_ratio)
     return image

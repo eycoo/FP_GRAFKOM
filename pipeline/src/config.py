@@ -65,6 +65,9 @@ class ModelCfg:
     # ekstraksi mesh SF3D materialkan fitur (N_tet, 3*Cp) ~5GB sekaligus -> OOM T4.
     # >0: proses query triplane+decoder per-chunk titik. 0 = perilaku asli SF3D.
     query_chunk: int = 65536
+    # --- khusus pembanding TripoSR (RQ1); diabaikan SF3D ---
+    mc_resolution: int = 256   # resolusi marching cubes TripoSR (kualitas vs waktu)
+    chunk_size: int = 8192     # chunk renderer TripoSR (anti-OOM T4)
 
 
 @dataclass

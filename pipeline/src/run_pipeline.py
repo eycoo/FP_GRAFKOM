@@ -28,6 +28,11 @@ from config import PipelineCfg  # noqa: E402
 from preprocess import load_rembg_session, prepare_image  # noqa: E402
 from inference import SF3DReconstructor  # noqa: E402
 from export_glb import export_glb, dump_raw_maps, write_manifest  # noqa: E402
+from categorize import (  # noqa: E402
+    category_for_stem,
+    default_metadata_path,
+    load_title_map,
+)
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
@@ -44,12 +49,15 @@ def collect_images(input_path: Path) -> list[Path]:
     return sorted(p for p in input_path.rglob("*") if p.suffix.lower() in IMAGE_EXTS)
 
 
-def process_one(img_path: Path, reconstructor, cfg: PipelineCfg, rembg_session, tier: str) -> dict:
+def process_one(img_path: Path, reconstructor, cfg: PipelineCfg, rembg_session, tier: str,
+                title_map: dict[str, str] | None = None) -> dict:
     """Jalankan A->E untuk satu foto, kembalikan record manifest."""
     out_root = Path(cfg.export.out_dir)
     glb_dir = out_root / "glb"
     raw_dir = out_root / "raw_mesh"
     stem = safe_stem(img_path.stem)
+    # kategori untuk RQ1 (analisis per-kategori). FALLBACK bila metadata tak ada.
+    category = category_for_stem(stem, title_map or {})
 
     # Tahap A
     image = prepare_image(
@@ -66,6 +74,8 @@ def process_one(img_path: Path, reconstructor, cfg: PipelineCfg, rembg_session, 
 
     record = {
         "stem": stem,
+        "category": category,                          # RQ1: kategori artefak
+        "model": getattr(cfg.model, "name", "stabilityai/stable-fast-3d"),
         "input": str(img_path),
         "glb": str(glb_path),
         "tier": tier,
@@ -77,6 +87,7 @@ def process_one(img_path: Path, reconstructor, cfg: PipelineCfg, rembg_session, 
         "texture_resolution": cfg.reconstruct.texture_resolution,
         "remesh": cfg.reconstruct.remesh,
         "vertex_count": cfg.reconstruct.vertex_count,
+        "estimate_illumination": cfg.reconstruct.estimate_illumination,  # RQ3 delight
     }
     return record
 
@@ -92,6 +103,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--texture-resolution", type=int, default=None)
     ap.add_argument("--remesh", default=None, choices=["none", "triangle", "quad"])
     ap.add_argument("--vertex-count", type=int, default=None)
+    ap.add_argument("--estimate-illumination", action="store_true",
+                    help="aktifkan env-light HDR (ablation delight RQ3)")
+    ap.add_argument("--metadata", default=str(default_metadata_path()),
+                    help="CSV judul artefak utk kategori RQ1 (default: dataset/metadata_artefak.csv)")
     args = ap.parse_args(argv)
 
     overrides = {}
@@ -105,12 +120,18 @@ def main(argv: list[str] | None = None) -> int:
         overrides["reconstruct.remesh"] = args.remesh
     if args.vertex_count is not None:
         overrides["reconstruct.vertex_count"] = args.vertex_count
+    if args.estimate_illumination:
+        overrides["reconstruct.estimate_illumination"] = True
 
     cfg = PipelineCfg.load(args.config, **overrides)
     images = collect_images(Path(args.input))
     if not images:
         print(f"Tidak ada foto di {args.input}", file=sys.stderr)
         return 1
+
+    title_map = load_title_map(args.metadata)
+    print(f"Kategori: {len(title_map)} judul dimuat dari {args.metadata}"
+          if title_map else f"Kategori: metadata tak ada ({args.metadata}) -> semua 'lainnya'")
 
     print(f"Muat SF3D ({cfg.model.name}) ...")
     reconstructor = SF3DReconstructor(cfg.model)
@@ -121,9 +142,9 @@ def main(argv: list[str] | None = None) -> int:
     ok = 0
     for i, img in enumerate(images, 1):
         try:
-            rec = process_one(img, reconstructor, cfg, rembg_session, args.tier)
+            rec = process_one(img, reconstructor, cfg, rembg_session, args.tier, title_map)
             write_manifest(rec, manifest)
-            print(f"[{i}/{len(images)}] {img.name} -> {Path(rec['glb']).name} "
+            print(f"[{i}/{len(images)}] {img.name} [{rec['category']}] -> {Path(rec['glb']).name} "
                   f"({rec['seconds']}s, VRAM {rec['peak_vram_gb']}GB, {rec['glb_bytes']//1024}KB)")
             ok += 1
         except Exception as exc:  # noqa: BLE001 - 1 foto gagal != batch gagal (PRD risiko)
