@@ -110,6 +110,19 @@ def main() -> int:
     check("safe_stem buang kutip/koma/spasi",
           run_pipeline.safe_stem('451725_"The_Concourse, study') == "451725_The_Concourse_study")
 
+    # 2b. categorize: judul -> kategori (RQ1)
+    import categorize
+    check("categorize: ax -> senjata", categorize.classify_title("Hafted Ax") == "senjata")
+    check("categorize: buddha -> arca", categorize.classify_title("Head of a Buddha") == "arca")
+    check("categorize: lintel -> arsitektur (sebelum deity)",
+          categorize.classify_title("Lintel with the Head of a Male Deity") == "arsitektur")
+    check("categorize: stem -> object_id", categorize.stem_to_object_id("artefak_39046_low") == "39046")
+    title_map = {"39046": "Seated Male Figure", "192770": "Hand Bell"}
+    check("category_for_stem pakai title_map",
+          categorize.category_for_stem("artefak_39046", title_map) == "arca")
+    check("category_for_stem fallback lainnya tanpa id",
+          categorize.category_for_stem("artefak_999999", title_map) == "lainnya")
+
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         imgs = make_fake_images(tmp / "input")
@@ -129,10 +142,14 @@ def main() -> int:
 
         recs = []
         for img in found:
-            rec = run_pipeline.process_one(img, reconstructor, cfg, rembg_session, "high")
+            rec = run_pipeline.process_one(img, reconstructor, cfg, rembg_session, "high", title_map)
             recs.append(rec)
 
         check("3 record dihasilkan", len(recs) == 3)
+        check("record punya kolom category (RQ1)", all("category" in r for r in recs))
+        # 39046 (Seated Male Figure)->arca & 192770 (Hand Bell)->ritual ada di title_map
+        check("category terisi dari title_map (bukan semua lainnya)",
+              any(r["category"] != "lainnya" for r in recs))
         glbs = list((out_dir / "glb").glob("*.glb"))
         check("3 GLB tertulis", len(glbs) == 3)
         check("nama GLB aman (no spasi/kutip)",
